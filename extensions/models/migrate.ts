@@ -593,17 +593,23 @@ function generateOutputs(scan: ScanResult): {
       }
 
       const sections = parseMarkdownSections(content);
-      const processed: MarkdownSection[] = [];
-
-      for (const section of sections) {
-        const classification = classifySection(section);
-        if (classification === "drop") continue;
-        if (classification === "transform") {
-          processed.push(transformSection(section));
-        } else {
-          processed.push(section);
+      let droppedAtLevel: number | undefined;
+      const processed = sections.filter((section) => {
+        if (droppedAtLevel !== undefined && section.level > droppedAtLevel) {
+          return false;
         }
-      }
+        if (droppedAtLevel !== undefined && section.level <= droppedAtLevel) {
+          droppedAtLevel = undefined;
+        }
+        if (classifySection(section) === "drop") {
+          droppedAtLevel = section.level;
+          return false;
+        }
+        return true;
+      }).map((section) => {
+        const classification = classifySection(section);
+        return classification === "transform" ? transformSection(section) : section;
+      });
 
       const result = reassembleSections(processed);
       if (result.length > 0) {

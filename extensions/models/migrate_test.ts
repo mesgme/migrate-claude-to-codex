@@ -322,6 +322,43 @@ Deno.test("classifySection keeps domain sections", () => {
   assertEquals(classifySection({ level: 2, heading: "Domain Layer", body: "Pure logic" }), "keep");
 });
 
+Deno.test("cascading drop: subsections under a dropped heading are also dropped", async () => {
+  const fixture = `# Project
+
+## Memory Rules
+
+Memory is persistent.
+
+### Memory Storage
+
+Stored in ~/.claude/.
+
+### Memory Retrieval
+
+Retrieved on load.
+
+## Tech Stack
+
+TypeScript and Deno.
+`;
+  const tmpDir = await Deno.makeTempDir();
+  const claudeMd = `${tmpDir}/CLAUDE.md`;
+  await Deno.writeTextFile(claudeMd, fixture);
+  try {
+    const { ctx, written } = mockContext(tmpDir);
+    await model.methods.scan.execute({} as Record<string, never>, ctx);
+    await model.methods.generate.execute({}, ctx);
+    const output = written.get("output") as { outputs: Array<{ agentsMd: string }> };
+    const md = output.outputs[0].agentsMd;
+    assertEquals(md.includes("Memory Rules"), false);
+    assertEquals(md.includes("Memory Storage"), false);
+    assertEquals(md.includes("Memory Retrieval"), false);
+    assertEquals(md.includes("Tech Stack"), true);
+  } finally {
+    await Deno.remove(tmpDir, { recursive: true });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Phase A4: transformSection
 // ---------------------------------------------------------------------------
