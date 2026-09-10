@@ -608,7 +608,9 @@ function generateOutputs(scan: ScanResult): {
         return true;
       }).map((section) => {
         const classification = classifySection(section);
-        return classification === "transform" ? transformSection(section) : section;
+        return classification === "transform"
+          ? transformSection(section)
+          : section;
       });
 
       const result = reassembleSections(processed);
