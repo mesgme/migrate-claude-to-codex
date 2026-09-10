@@ -58,6 +58,10 @@ function mockContext(
   return {
     ctx: {
       globalArgs: { repoPath },
+      logger: {
+        info: () => {},
+        debug: () => {},
+      },
       writeResource: async (
         specName: string,
         name: string,

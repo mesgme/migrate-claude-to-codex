@@ -63,8 +63,14 @@ const OutputSchema = z.object({
 // MethodContext type (minimal interface for what swamp provides)
 // ---------------------------------------------------------------------------
 
+interface Logger {
+  info: (message: string, props?: Record<string, unknown>) => void;
+  debug: (message: string, props?: Record<string, unknown>) => void;
+}
+
 interface MethodContext {
   globalArgs: GlobalArgs;
+  logger: Logger;
   writeResource: (
     specName: string,
     name: string,
@@ -681,7 +687,13 @@ export const model = {
         _args: Record<string, never>,
         context: MethodContext,
       ) => {
+        context.logger.info("Scanning {repoPath}", {
+          repoPath: context.globalArgs.repoPath,
+        });
         const result = await scanRepo(context.globalArgs.repoPath);
+        context.logger.info("Scan complete — found {count} config files", {
+          count: result.files.length,
+        });
         const handle = await context.writeResource(
           "scan",
           "scan",
@@ -700,6 +712,7 @@ export const model = {
         args: { writeToDisk?: boolean },
         context: MethodContext,
       ) => {
+        context.logger.info("Generating AGENTS.md from scan data");
         const scanData = await context.readResource("scan");
         if (!scanData) {
           throw new Error(
@@ -708,6 +721,9 @@ export const model = {
         }
         const scan = scanData as unknown as ScanResult;
         const { outputs, swampConfigUpdate } = generateOutputs(scan);
+        context.logger.info("Generated {count} AGENTS.md files", {
+          count: outputs.length,
+        });
 
         if (args.writeToDisk) {
           for (const entry of outputs) {
@@ -766,7 +782,13 @@ export const model = {
         args: { writeToDisk?: boolean },
         context: MethodContext,
       ) => {
+        context.logger.info("Migrating {repoPath}", {
+          repoPath: context.globalArgs.repoPath,
+        });
         const scanResult = await scanRepo(context.globalArgs.repoPath);
+        context.logger.info("Scan found {count} config files", {
+          count: scanResult.files.length,
+        });
         await context.writeResource(
           "scan",
           "scan",
@@ -774,6 +796,9 @@ export const model = {
         );
 
         const { outputs, swampConfigUpdate } = generateOutputs(scanResult);
+        context.logger.info("Generated {count} AGENTS.md files", {
+          count: outputs.length,
+        });
 
         if (args.writeToDisk) {
           for (const entry of outputs) {
