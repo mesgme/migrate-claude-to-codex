@@ -428,6 +428,21 @@ export async function walkForClaudeMd(
 // ---------------------------------------------------------------------------
 
 async function scanRepo(repoPath: string): Promise<ScanResult> {
+  try {
+    const repo = await Deno.stat(repoPath);
+    if (!repo.isDirectory) {
+      throw new Error(`repoPath "${repoPath}" is not a readable directory`);
+    }
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.includes("not a readable directory")
+    ) {
+      throw error;
+    }
+    throw new Error(`repoPath "${repoPath}" is not a readable directory`);
+  }
+
   const files: ClaudeFile[] = [];
 
   // Walk for CLAUDE.md at all levels

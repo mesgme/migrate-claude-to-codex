@@ -1,4 +1,8 @@
-import { assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  assertEquals,
+  assertExists,
+  assertRejects,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   model,
   parseMarkdownSections,
@@ -142,6 +146,18 @@ Deno.test("scan handles repo with no claude config gracefully", async () => {
   } finally {
     await Deno.remove(emptyDir, { recursive: true });
   }
+});
+
+Deno.test("scan rejects a repoPath that is not a readable directory", async () => {
+  const missingDir = new URL("testdata/no-such-repo", import.meta.url).pathname;
+  const { ctx, written } = mockContext(missingDir);
+
+  await assertRejects(
+    () => model.methods.scan.execute({} as Record<string, never>, ctx),
+    Error,
+    "not a readable directory",
+  );
+  assertEquals(written.has("scan"), false);
 });
 
 // ---------------------------------------------------------------------------
