@@ -1,0 +1,7 @@
+manifestVersion: 1
+name: "@mesgme/migrate-claude-to-codex"
+version: "2026.09.10.1"
+description: "Scan Claude Code configuration and generate equivalent Codex AGENTS.md"
+repository: "https://github.com/mesgme/migrate-claude-to-codex"
+models:
+  - extensions/models/migrate.ts

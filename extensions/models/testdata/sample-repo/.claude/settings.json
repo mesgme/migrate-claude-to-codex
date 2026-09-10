@@ -1,0 +1,6 @@
+{
+  "permissions": {
+    "allow": ["npm test", "npm run lint"],
+    "deny": ["rm -rf"]
+  }
+}
