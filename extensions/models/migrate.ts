@@ -21,7 +21,7 @@ type GlobalArgs = z.infer<typeof GlobalArgsSchema>;
 
 const ClaudeFileSchema = z.object({
   path: z.string(),
-  relativePath: z.string().optional(),
+  relativePath: z.string(),
   content: z.string(),
   type: z.enum([
     "claude_md",
@@ -194,6 +194,13 @@ export function extractSwampManagedSection(content: string): {
     keptSections.push(section);
   }
 
+  for (const section of keptSections) {
+    section.body = section.body.replace(
+      /\s*[,;—–-]+\s*see\s+\*\*Communication\*\*\s+below\.?\s*/gi,
+      ". ",
+    );
+  }
+
   const managedContent = reassembleSections(keptSections);
   return { managedContent, remainingContent };
 }
@@ -290,10 +297,17 @@ export function transformSection(section: MarkdownSection): MarkdownSection {
     /claude-code@anthropic\.com/g,
     "coding-agent@users.noreply.github.com",
   );
+  body = body.replace(/\s*\(claude\.ai\/code\)/g, "");
+  heading = heading.replace(/Claude\s+Code/g, "the coding agent");
 
   for (const [pattern, replacement] of NEGATIVE_REWRITES) {
     body = body.replace(pattern, replacement);
   }
+
+  body = body.replace(
+    /\s*[,;—–-]+\s*see\s+\*\*Communication\*\*\s+below\.?\s*/gi,
+    ". ",
+  );
 
   return { level: section.level, heading, body };
 }
@@ -337,6 +351,7 @@ async function readFileIfExists(path: string): Promise<string | null> {
 async function collectDir(
   dirPath: string,
   type: ClaudeFile["type"],
+  repoPath: string,
 ): Promise<ClaudeFile[]> {
   const files: ClaudeFile[] = [];
   try {
@@ -345,7 +360,8 @@ async function collectDir(
       const fullPath = `${dirPath}/${entry.name}`;
       const content = await readFileIfExists(fullPath);
       if (content !== null) {
-        files.push({ path: fullPath, content, type });
+        const relativePath = fullPath.replace(repoPath + "/", "");
+        files.push({ path: fullPath, relativePath, content, type });
       }
     }
   } catch {
@@ -430,6 +446,7 @@ async function scanRepo(repoPath: string): Promise<ScanResult> {
   if (settings !== null) {
     files.push({
       path: `${repoPath}/.claude/settings.json`,
+      relativePath: ".claude/settings.json",
       content: settings,
       type: "settings",
     });
@@ -442,17 +459,26 @@ async function scanRepo(repoPath: string): Promise<ScanResult> {
   if (localSettings !== null) {
     files.push({
       path: `${repoPath}/.claude/settings.local.json`,
+      relativePath: ".claude/settings.local.json",
       content: localSettings,
       type: "settings",
     });
   }
 
   // .claude/commands/
-  const commands = await collectDir(`${repoPath}/.claude/commands`, "command");
+  const commands = await collectDir(
+    `${repoPath}/.claude/commands`,
+    "command",
+    repoPath,
+  );
   files.push(...commands);
 
   // .claude/skills/
-  const skills = await collectDir(`${repoPath}/.claude/skills`, "skill");
+  const skills = await collectDir(
+    `${repoPath}/.claude/skills`,
+    "skill",
+    repoPath,
+  );
   files.push(...skills);
 
   // Phase B: .swamp.yaml detection
@@ -460,6 +486,7 @@ async function scanRepo(repoPath: string): Promise<ScanResult> {
   if (swampConfig !== null) {
     files.push({
       path: `${repoPath}/.swamp.yaml`,
+      relativePath: ".swamp.yaml",
       content: swampConfig,
       type: "swamp_config",
     });
@@ -541,12 +568,12 @@ function generateAgentsMdForFile(
   if (managedRules) {
     parts.push("## Project Rules (swamp)");
     parts.push("");
-    parts.push(managedRules);
+    parts.push(managedRules.replace(/^# /gm, "## "));
     parts.push("");
   }
 
   if (content.length > 0) {
-    parts.push(content);
+    parts.push(content.replace(/^# /gm, "## "));
     parts.push("");
   }
 
@@ -564,7 +591,8 @@ function generateAgentsMdForFile(
   if (workflows.length > 0) {
     parts.push("## Workflows");
     parts.push("");
-    parts.push(...workflows);
+    const workflowContent = workflows.join("\n").replace(/^# /gm, "## ");
+    parts.push(workflowContent);
   }
 
   return parts.join("\n");
@@ -789,7 +817,7 @@ export const model = {
         context.logger.info("Scan found {count} config files", {
           count: scanResult.files.length,
         });
-        await context.writeResource(
+        const scanHandle = await context.writeResource(
           "scan",
           "scan",
           scanResult as unknown as Record<string, unknown>,
@@ -848,7 +876,7 @@ export const model = {
         );
         return {
           dataHandles: [
-            { name: "scan" },
+            scanHandle,
             handle,
           ],
         };

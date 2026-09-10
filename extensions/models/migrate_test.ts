@@ -668,3 +668,65 @@ Deno.test({
     console.log(rootOutput.agentsMd.split("\n").slice(0, 40).join("\n"));
   },
 });
+
+// ---------------------------------------------------------------------------
+// Issue fixes — duplicate H1, dangling refs, claude.ai/code identity
+// ---------------------------------------------------------------------------
+
+Deno.test("transformSection replaces claude.ai/code URL", () => {
+  const section: MarkdownSection = {
+    level: 1,
+    heading: "CLAUDE.md",
+    body: 'This file provides guidance to the coding agent (claude.ai/code) when working with code.',
+  };
+  const result = transformSection(section);
+  assertEquals(result.body.includes("claude.ai/code"), false);
+});
+
+Deno.test("transformSection strips dangling Communication cross-reference", () => {
+  const section: MarkdownSection = {
+    level: 0,
+    heading: "",
+    body: '9. **"Workflow" means a swamp workflow.** If the user uses "workflow" in its everyday sense, see **Communication** below. Do not keep correcting the vocabulary.',
+  };
+  const result = transformSection(section);
+  assertEquals(result.body.includes("see **Communication** below"), false);
+  assertEquals(result.body.includes("Do not keep correcting the vocabulary"), true);
+});
+
+Deno.test("generated AGENTS.md has exactly one H1", async () => {
+  const { ctx, written } = mockContext(FIXTURE_PATH);
+  await model.methods.scan.execute({} as Record<string, never>, ctx);
+  await model.methods.generate.execute({}, ctx);
+
+  const output = written.get("output") as {
+    outputs: Array<{ relativePath: string; agentsMd: string }>;
+  };
+  const agentsMd = output.outputs[0].agentsMd;
+  const h1Lines = agentsMd.split("\n").filter((l: string) => /^# /.test(l));
+  assertEquals(
+    h1Lines.length,
+    1,
+    `Expected exactly one H1, got ${h1Lines.length}: ${JSON.stringify(h1Lines)}`,
+  );
+  assertEquals(h1Lines[0], "# AGENTS.md");
+});
+
+Deno.test("scan populates relativePath on every file", async () => {
+  const { ctx, written } = mockContext(FIXTURE_PATH);
+  await model.methods.scan.execute({} as Record<string, never>, ctx);
+
+  const scan = written.get("scan") as {
+    files: Array<{ path: string; relativePath?: string; type: string }>;
+  };
+  assertExists(scan);
+
+  for (const f of scan.files) {
+    assertExists(
+      f.relativePath,
+      `file ${f.path} (type=${f.type}) is missing relativePath`,
+    );
+    assertEquals(typeof f.relativePath, "string");
+    assertEquals(f.relativePath.length > 0, true);
+  }
+});
