@@ -3,5 +3,7 @@ initializedAt: "2026-09-10T12:41:39.387Z"
 repoId: 7d78f41c-8944-43db-9a54-8f4d79488a77
 tools:
   - claude
+  - codex
+  - opencode
 gitignoreManaged: true
-upgradedAt: "2026-09-17T18:10:07.308Z"
+upgradedAt: "2026-09-17T19:06:28.578Z"
