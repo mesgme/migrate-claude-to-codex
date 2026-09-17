@@ -841,3 +841,166 @@ Deno.test("scan populates relativePath on every file", async () => {
     assertEquals(f.relativePath.length > 0, true);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Scanner compatibility: CLAUDE.md YAML frontmatter
+// ---------------------------------------------------------------------------
+
+Deno.test("generate strips YAML frontmatter from CLAUDE.md", async () => {
+  const tmpDir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    `${tmpDir}/CLAUDE.md`,
+    `---
+version: 2
+memory: dual
+---
+
+# Project
+
+## Tech Stack
+
+TypeScript and React.
+
+## Memory Rules
+
+Save user preferences to memory.
+`,
+  );
+  try {
+    const { ctx, written } = mockContext(tmpDir);
+    await model.methods.scan.execute({} as Record<string, never>, ctx);
+    await model.methods.generate.execute({}, ctx);
+    const output = written.get("output") as {
+      outputs: Array<{ agentsMd: string }>;
+    };
+    const agentsMd = output.outputs[0].agentsMd;
+    // Frontmatter should not leak
+    assertEquals(agentsMd.includes("version: 2"), false, "CLAUDE.md frontmatter leaked");
+    assertEquals(agentsMd.includes("memory: dual"), false, "CLAUDE.md frontmatter leaked");
+    // Domain content preserved, Memory dropped
+    assertEquals(agentsMd.includes("Tech Stack"), true);
+    assertEquals(agentsMd.includes("Memory Rules"), false);
+  } finally {
+    await Deno.remove(tmpDir, { recursive: true });
+  }
+});
+
+Deno.test("generate handles progressive-disclosure CLAUDE.md with <details>", async () => {
+  const tmpDir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    `${tmpDir}/CLAUDE.md`,
+    `# Project
+
+Quick-start: run \`npm test\` before committing.
+
+## Essential Rules
+
+- Always run tests before pushing
+
+## Tech Stack
+
+TypeScript 5.x with Vitest.
+
+## Deep Dive
+
+<details>
+<summary>Architecture details</summary>
+
+### Service Layer
+
+Orchestrates use cases between domain and adapters.
+
+### Repository Pattern
+
+Abstract persistence behind interfaces.
+
+</details>
+
+## Hooks
+
+Pre-commit hooks configured in .claude/settings.json.
+`,
+  );
+  try {
+    const { ctx, written } = mockContext(tmpDir);
+    await model.methods.scan.execute({} as Record<string, never>, ctx);
+    await model.methods.generate.execute({}, ctx);
+    const output = written.get("output") as {
+      outputs: Array<{ agentsMd: string }>;
+    };
+    const agentsMd = output.outputs[0].agentsMd;
+    // Domain content including <details> preserved
+    assertEquals(agentsMd.includes("Essential Rules"), true);
+    assertEquals(agentsMd.includes("Tech Stack"), true);
+    assertEquals(agentsMd.includes("Service Layer"), true);
+    assertEquals(agentsMd.includes("Repository Pattern"), true);
+    // Hooks section dropped
+    assertEquals(agentsMd.includes("## Hooks"), false);
+  } finally {
+    await Deno.remove(tmpDir, { recursive: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Scanner compatibility: custom command YAML frontmatter
+// ---------------------------------------------------------------------------
+
+Deno.test("generate strips YAML frontmatter from custom commands", async () => {
+  const tmpDir = await Deno.makeTempDir();
+  await Deno.writeTextFile(`${tmpDir}/CLAUDE.md`, "# Project\n\n## Architecture\n\nREST API.\n");
+  await Deno.mkdir(`${tmpDir}/.claude/commands`, { recursive: true });
+  await Deno.writeTextFile(
+    `${tmpDir}/.claude/commands/deploy.md`,
+    `---
+description: Deploy the app to staging
+allowed-tools: Bash, Read
+model: claude-sonnet-4-20250514
+---
+Deploy the application to staging.
+
+1. Run tests
+2. Build the Docker image
+3. Push to ECR
+`,
+  );
+  try {
+    const { ctx, written } = mockContext(tmpDir);
+    await model.methods.scan.execute({} as Record<string, never>, ctx);
+    await model.methods.generate.execute({}, ctx);
+    const output = written.get("output") as {
+      outputs: Array<{ agentsMd: string }>;
+    };
+    const agentsMd = output.outputs[0].agentsMd;
+    // Frontmatter should NOT appear in output
+    assertEquals(agentsMd.includes("allowed-tools:"), false, "frontmatter leaked into AGENTS.md");
+    assertEquals(agentsMd.includes("claude-sonnet"), false, "model field leaked into AGENTS.md");
+    // The prompt body should still be present
+    assertEquals(agentsMd.includes("Deploy the application to staging"), true);
+    assertEquals(agentsMd.includes("Push to ECR"), true);
+  } finally {
+    await Deno.remove(tmpDir, { recursive: true });
+  }
+});
+
+Deno.test("generate keeps commands without frontmatter unchanged", async () => {
+  const tmpDir = await Deno.makeTempDir();
+  await Deno.writeTextFile(`${tmpDir}/CLAUDE.md`, "# Project\n");
+  await Deno.mkdir(`${tmpDir}/.claude/commands`, { recursive: true });
+  await Deno.writeTextFile(
+    `${tmpDir}/.claude/commands/review.md`,
+    "Review the current PR for correctness.\n\nCheck all changed files.\n",
+  );
+  try {
+    const { ctx, written } = mockContext(tmpDir);
+    await model.methods.scan.execute({} as Record<string, never>, ctx);
+    await model.methods.generate.execute({}, ctx);
+    const output = written.get("output") as {
+      outputs: Array<{ agentsMd: string }>;
+    };
+    const agentsMd = output.outputs[0].agentsMd;
+    assertEquals(agentsMd.includes("Review the current PR for correctness"), true);
+    assertEquals(agentsMd.includes("Check all changed files"), true);
+  } finally {
+    await Deno.remove(tmpDir, { recursive: true });
+  }
+});

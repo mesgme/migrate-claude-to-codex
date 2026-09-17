@@ -544,6 +544,12 @@ function extractGuardrails(files: ClaudeFile[]): string[] {
   return rules;
 }
 
+function stripYamlFrontmatter(content: string): string {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+  if (!match) return content;
+  return match[2];
+}
+
 function extractWorkflows(files: ClaudeFile[]): string[] {
   const commands = files.filter((f) => f.type === "command");
   if (commands.length === 0) return [];
@@ -551,9 +557,10 @@ function extractWorkflows(files: ClaudeFile[]): string[] {
   const lines: string[] = [];
   for (const f of commands) {
     const name = f.path.split("/").pop()?.replace(/\.md$/, "") ?? "unknown";
+    const body = stripYamlFrontmatter(f.content).trim();
     lines.push(`### ${name}`);
     lines.push("");
-    lines.push(f.content.trim());
+    lines.push(body);
     lines.push("");
   }
   return lines;
@@ -636,7 +643,7 @@ function generateOutputs(scan: ScanResult): {
     let managedRules: string | null = null;
 
     for (const f of dirFiles) {
-      let content = f.content;
+      let content = stripYamlFrontmatter(f.content);
 
       const swampResult = extractSwampManagedSection(content);
       if (swampResult.managedContent) {
