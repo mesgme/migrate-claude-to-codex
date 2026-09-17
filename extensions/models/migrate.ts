@@ -1,9 +1,9 @@
 /**
- * @mesgme/migrate-claude-to-codex — scan Claude Code config and generate Codex AGENTS.md.
+ * @mesgme/migrate-claude-to-codex — scan Claude Code config and generate AGENTS.md.
  *
  * Reads a repo's Claude Code configuration (CLAUDE.md, .claude/settings.json,
- * .claude/commands/, .claude/skills/) and produces an equivalent Codex AGENTS.md
- * file that gives Codex agents the same project context and guardrails.
+ * .claude/commands/, .claude/skills/) and produces an equivalent AGENTS.md
+ * file that gives coding agents the same project context and guardrails.
  *
  * @module
  */
@@ -58,6 +58,8 @@ const OutputSchema = z.object({
     z.null(),
   ]),
 });
+
+const AGENTS_MD_TOOLS = ["codex", "opencode"];
 
 // ---------------------------------------------------------------------------
 // MethodContext type (minimal interface for what swamp provides)
@@ -212,6 +214,7 @@ export function extractSwampManagedSection(content: string): {
 const DROP_HEADING_PATTERNS = [
   /\bmemory\b/i,
   /\bhooks?\b/i,
+  /\b(?:claude\s+code|codex|opencode|aider|cursor)\s+specifics?\b/i,
 ];
 
 const TRANSFORM_HEADING_PATTERNS = [
@@ -515,7 +518,7 @@ async function scanRepo(repoPath: string): Promise<ScanResult> {
 }
 
 // ---------------------------------------------------------------------------
-// Generator — maps Claude Code config to Codex AGENTS.md
+// Generator — maps Claude Code config to AGENTS.md
 // ---------------------------------------------------------------------------
 
 function extractGuardrails(files: ClaudeFile[]): string[] {
@@ -641,6 +644,8 @@ function generateOutputs(scan: ScanResult): {
         content = swampResult.remainingContent;
       }
 
+      content = content.replace(/^@AGENTS\.md\s*$/gm, "").trim();
+
       const sections = parseMarkdownSections(content);
       let droppedAtLevel: number | undefined;
       const processed = sections.filter((section) => {
@@ -683,15 +688,15 @@ function generateOutputs(scan: ScanResult): {
     outputs.push({ relativePath, agentsMd });
   }
 
-  // Phase B: swamp config update
   let swampConfigUpdate: { tools: string[] } | null = null;
   const swampFile = scan.files.find((f) => f.type === "swamp_config");
   if (swampFile) {
     const existingTools = parseSwampTools(swampFile.content);
-    if (!existingTools.includes("codex")) {
-      const newTools = [...existingTools];
-      if (!newTools.includes("codex")) newTools.push("codex");
-      swampConfigUpdate = { tools: newTools };
+    const missingTools = AGENTS_MD_TOOLS.filter(
+      (t) => !existingTools.includes(t),
+    );
+    if (missingTools.length > 0) {
+      swampConfigUpdate = { tools: [...existingTools, ...missingTools] };
     }
   }
 
@@ -746,7 +751,7 @@ export const model = {
       },
     },
     generate: {
-      description: "Generate Codex AGENTS.md from a previous scan. " +
+      description: "Generate AGENTS.md from a previous scan. " +
         "Requires a scan resource to exist (run the scan method first).",
       arguments: z.object({
         writeToDisk: z.boolean().optional(),

@@ -41,6 +41,11 @@ Deno.test("generate method has a description", () => {
   assertEquals(model.methods.generate.description.length > 0, true);
 });
 
+Deno.test("method descriptions are agent-neutral", () => {
+  assertEquals(model.methods.generate.description.includes("Codex"), false);
+  assertEquals(model.methods.generate.description.includes("AGENTS.md"), true);
+});
+
 Deno.test("model declares scan and output resources", () => {
   assertExists(model.resources.scan);
   assertExists(model.resources.output);
@@ -336,6 +341,21 @@ Deno.test("classifySection transforms sections with Claude Code references", () 
   );
 });
 
+Deno.test("classifySection drops agent-specific headings", () => {
+  assertEquals(
+    classifySection({ level: 2, heading: "Claude Code specifics", body: "Use plan mode." }),
+    "drop",
+  );
+  assertEquals(
+    classifySection({ level: 2, heading: "Codex specifics", body: "Use sandbox." }),
+    "drop",
+  );
+  assertEquals(
+    classifySection({ level: 2, heading: "OpenCode Specifics", body: "Use TUI." }),
+    "drop",
+  );
+});
+
 Deno.test("classifySection keeps domain sections", () => {
   assertEquals(classifySection({ level: 2, heading: "Tech Stack", body: "TypeScript" }), "keep");
   assertEquals(classifySection({ level: 2, heading: "Architecture", body: "Hexagonal" }), "keep");
@@ -374,6 +394,43 @@ TypeScript and Deno.
     assertEquals(md.includes("Memory Storage"), false);
     assertEquals(md.includes("Memory Retrieval"), false);
     assertEquals(md.includes("Tech Stack"), true);
+  } finally {
+    await Deno.remove(tmpDir, { recursive: true });
+  }
+});
+
+Deno.test("cascading drop: agent-specifics section and its children are dropped", async () => {
+  const fixture = `# Project
+
+## Architecture
+
+Clean architecture.
+
+## Claude Code specifics
+
+- Use plan mode for changes spanning multiple components.
+
+### Compacting
+
+- Preserve the modified-file list when compacting.
+
+## Testing
+
+Run tests with deno test.
+`;
+  const tmpDir = await Deno.makeTempDir();
+  await Deno.writeTextFile(`${tmpDir}/CLAUDE.md`, fixture);
+  try {
+    const { ctx, written } = mockContext(tmpDir);
+    await model.methods.scan.execute({} as Record<string, never>, ctx);
+    await model.methods.generate.execute({}, ctx);
+    const output = written.get("output") as { outputs: Array<{ agentsMd: string }> };
+    const md = output.outputs[0].agentsMd;
+    assertEquals(md.includes("Claude Code specifics"), false);
+    assertEquals(md.includes("Compacting"), false);
+    assertEquals(md.includes("plan mode"), false);
+    assertEquals(md.includes("Architecture"), true);
+    assertEquals(md.includes("Testing"), true);
   } finally {
     await Deno.remove(tmpDir, { recursive: true });
   }
@@ -507,10 +564,11 @@ Deno.test("generate for swamp repo prepares .swamp.yaml update", async () => {
     swampConfigUpdate: { tools: string[] } | null;
   };
 
-  // Should suggest adding codex to tools
+  // Should suggest adding AGENTS.md-consuming tools
   assertExists(output.swampConfigUpdate);
   assertEquals(output.swampConfigUpdate.tools.includes("claude"), true);
   assertEquals(output.swampConfigUpdate.tools.includes("codex"), true);
+  assertEquals(output.swampConfigUpdate.tools.includes("opencode"), true);
 });
 
 Deno.test("generate for non-swamp repo has no swamp config update", async () => {
@@ -676,13 +734,50 @@ Deno.test({
     assertEquals(rootOutput.agentsMd.includes("Getting Started"), false);
     assertEquals(rootOutput.agentsMd.includes("## Communication"), false);
 
-    // Should suggest adding codex
+    // Should suggest adding AGENTS.md-consuming tools
     assertExists(output.swampConfigUpdate);
     assertEquals(output.swampConfigUpdate.tools.includes("codex"), true);
+    assertEquals(output.swampConfigUpdate.tools.includes("opencode"), true);
 
     console.log("--- Puddle AGENTS.md preview (first 40 lines) ---");
     console.log(rootOutput.agentsMd.split("\n").slice(0, 40).join("\n"));
   },
+});
+
+// ---------------------------------------------------------------------------
+// Phase F: @AGENTS.md directive stripping
+// ---------------------------------------------------------------------------
+
+Deno.test("generate strips @AGENTS.md directive line from CLAUDE.md", async () => {
+  const tmpDir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    `${tmpDir}/CLAUDE.md`,
+    `@AGENTS.md
+
+## Claude Code specifics
+
+- Use plan mode for changes spanning multiple components.
+- Preserve the modified-file list when compacting.
+
+## Architecture
+
+Clean architecture.
+`,
+  );
+  try {
+    const { ctx, written } = mockContext(tmpDir);
+    await model.methods.scan.execute({} as Record<string, never>, ctx);
+    await model.methods.generate.execute({}, ctx);
+    const output = written.get("output") as {
+      outputs: Array<{ relativePath: string; agentsMd: string }>;
+    };
+    const agentsMd = output.outputs[0].agentsMd;
+    assertEquals(agentsMd.includes("@AGENTS.md"), false);
+    assertEquals(agentsMd.includes("Claude Code specifics"), false);
+    assertEquals(agentsMd.includes("Architecture"), true);
+  } finally {
+    await Deno.remove(tmpDir, { recursive: true });
+  }
 });
 
 // ---------------------------------------------------------------------------
