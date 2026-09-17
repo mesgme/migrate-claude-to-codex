@@ -1,3 +1,5 @@
+@AGENTS.md
+
 <!-- BEGIN swamp managed section - DO NOT EDIT -->
 # Project
 
@@ -42,8 +44,6 @@ schema of the CLI (commands, options, arguments) intended for agent
 consumption, run `swamp help [<command>...]` — e.g. `swamp help` returns
 the full tree, and `swamp help model method run` scopes to a subtree.
 <!-- END swamp managed section -->
-
-@AGENTS.md
 
 ## Claude Code specifics
 
